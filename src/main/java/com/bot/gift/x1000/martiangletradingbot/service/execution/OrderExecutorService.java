@@ -11,6 +11,8 @@ import com.bot.gift.x1000.martiangletradingbot.model.enums.TradeDirection;
 import com.bot.gift.x1000.martiangletradingbot.model.enums.TradeStatus;
 import com.bot.gift.x1000.martiangletradingbot.repository.PositionRepository;
 import com.bot.gift.x1000.martiangletradingbot.service.TradeLoggerService;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.retry.annotation.Backoff;
@@ -184,9 +186,11 @@ public class OrderExecutorService {
     }
 
     /**
-     * Execute order on exchange
+     * Execute order on exchange with circuit breaker protection
+     * Fallback to orderExecutionFallback when circuit is open
      * TODO: Implement actual Binance API integration
      */
+    @CircuitBreaker(name = "binanceExchange", fallbackMethod = "orderExecutionFallback")
     private OrderResponse executeOrderOnExchange(OrderRequest request) {
         // PLACEHOLDER: In production, this would call Binance API
         // For now, simulate successful order execution
@@ -217,6 +221,28 @@ public class OrderExecutorService {
         // }
 
         return response;
+    }
+
+    /**
+     * Fallback method when circuit breaker is OPEN
+     * Prevents orders from being placed when exchange is unreachable
+     */
+    private OrderResponse orderExecutionFallback(OrderRequest request, CallNotPermittedException exception) {
+        log.error("Circuit breaker OPEN - Cannot execute order for {} {}. Exchange is temporarily unavailable.",
+            request.getSymbol(), request.getSide());
+
+        throw new RuntimeException("Exchange service is temporarily unavailable. Circuit breaker is OPEN. " +
+            "Please try again later or check exchange connectivity.", exception);
+    }
+
+    /**
+     * Fallback method for general exceptions during order execution
+     */
+    private OrderResponse orderExecutionFallback(OrderRequest request, Exception exception) {
+        log.error("Order execution failed with exception for {} {}: {}",
+            request.getSymbol(), request.getSide(), exception.getMessage());
+
+        throw new RuntimeException("Order execution failed: " + exception.getMessage(), exception);
     }
 
     /**

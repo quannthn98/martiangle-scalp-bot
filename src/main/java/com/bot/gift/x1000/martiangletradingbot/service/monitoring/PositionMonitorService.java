@@ -27,6 +27,7 @@ public class PositionMonitorService {
     private final PositionRepository positionRepository;
     private final OrderExecutorService orderExecutorService;
     private final StrategyProperties strategyProperties;
+    private final TrendConfirmationService trendConfirmationService;
 
     /**
      * Monitor all active positions every 5 seconds
@@ -47,6 +48,86 @@ public class PositionMonitorService {
             } catch (Exception e) {
                 log.error("Error monitoring position {}: {}", position.getSymbol(), e.getMessage(), e);
             }
+        }
+    }
+
+    /**
+     * Re-check trend confirmation every 5 minutes for all open positions
+     * Closes positions when trend reverses
+     */
+    @Scheduled(fixedRate = 300000) // 5 minutes = 300,000 milliseconds
+    public void recheckTrendConfirmation() {
+        List<Position> activePositions = positionRepository.findAllActivePositions();
+
+        if (activePositions.isEmpty()) {
+            return;
+        }
+
+        log.info("Re-checking trend confirmation for {} active positions", activePositions.size());
+
+        for (Position position : activePositions) {
+            try {
+                recheckTrendForPosition(position);
+            } catch (Exception e) {
+                log.error("Error rechecking trend for position {}: {}", position.getSymbol(), e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * Re-check trend for a single position
+     */
+    private void recheckTrendForPosition(Position position) {
+        log.debug("Rechecking trend for {} {}", position.getSymbol(), position.getDirection());
+
+        // Check if trend is still valid
+        boolean trendValid = trendConfirmationService.isTrendStillValid(position);
+
+        if (!trendValid) {
+            log.warn("Trend reversed for {} {} - Closing position",
+                position.getSymbol(), position.getDirection());
+
+            // Close entire position due to trend reversal
+            orderExecutorService.executeExit(position, 100, "TREND_REVERSAL");
+            return;
+        }
+
+        // Get trend strength score
+        int trendStrength = trendConfirmationService.getTrendStrengthScore(position);
+        log.debug("Trend strength for {} {}: {}/100", position.getSymbol(), position.getDirection(), trendStrength);
+
+        // If trend is weakening significantly (score < 40), tighten stop loss
+        if (trendStrength < 40 && !position.getTp1Hit()) {
+            log.warn("Trend weakening for {} {} (score: {}) - Tightening stop loss",
+                position.getSymbol(), position.getDirection(), trendStrength);
+
+            // Tighten stop loss to 0.8% from entry
+            BigDecimal tightStopLoss = position.getAverageEntryPrice()
+                .multiply(BigDecimal.ONE.subtract(
+                    BigDecimal.valueOf(0.8).divide(BigDecimal.valueOf(100), 8, java.math.RoundingMode.HALF_UP)
+                ));
+
+            // Only update if new SL is better than current
+            boolean shouldUpdate = position.getDirection() == TradeDirection.LONG
+                ? tightStopLoss.compareTo(position.getCurrentStopLoss()) > 0
+                : tightStopLoss.compareTo(position.getCurrentStopLoss()) < 0;
+
+            if (shouldUpdate) {
+                position.setCurrentStopLoss(tightStopLoss);
+                positionRepository.save(position);
+                log.info("Tightened stop loss for {} to {} due to weakening trend",
+                    position.getSymbol(), tightStopLoss);
+            }
+        }
+
+        // If trend is very weak (score < 30) and we're in profit, consider partial exit
+        if (trendStrength < 30 && position.getUnrealizedPnl() != null &&
+            position.getUnrealizedPnl().compareTo(BigDecimal.ZERO) > 0 && !position.getTp1Hit()) {
+
+            log.warn("Trend very weak for {} {} (score: {}) - Taking partial profit",
+                position.getSymbol(), position.getDirection(), trendStrength);
+
+            orderExecutorService.executeExit(position, 50, "WEAK_TREND_PARTIAL_EXIT");
         }
     }
 

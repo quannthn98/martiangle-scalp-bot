@@ -57,4 +57,28 @@ public interface CandleRepository extends JpaRepository<Candle, Long> {
      * Count candles for symbol and timeframe
      */
     long countBySymbolAndTimeframe(String symbol, Timeframe timeframe);
+
+    /**
+     * Find candles by symbol, timeframe and time range
+     */
+    @Query("SELECT c FROM Candle c WHERE c.symbol = :symbol AND c.timeframe = :timeframe " +
+        "AND c.openTime >= :startTime AND c.closeTime <= :endTime " +
+        "ORDER BY c.openTime ASC")
+    List<Candle> findBySymbolAndTimeframeBetween(
+        @Param("symbol") String symbol,
+        @Param("timeframe") Timeframe timeframe,
+        @Param("startTime") Instant startTime,
+        @Param("endTime") Instant endTime
+    );
+
+    /**
+     * Find recent N candles for symbol and timeframe
+     */
+    @Query("SELECT c FROM Candle c WHERE c.symbol = :symbol AND c.timeframe = :timeframe " +
+        "ORDER BY c.openTime DESC LIMIT :limit")
+    List<Candle> findRecentCandles(
+        @Param("symbol") String symbol,
+        @Param("timeframe") Timeframe timeframe,
+        @Param("limit") int limit
+    );
 }

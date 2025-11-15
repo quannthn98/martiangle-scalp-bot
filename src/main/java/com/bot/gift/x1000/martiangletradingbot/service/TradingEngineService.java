@@ -5,6 +5,7 @@ import com.bot.gift.x1000.martiangletradingbot.model.dto.TrendAnalysis;
 import com.bot.gift.x1000.martiangletradingbot.model.entity.Trade;
 import com.bot.gift.x1000.martiangletradingbot.repository.PositionRepository;
 import com.bot.gift.x1000.martiangletradingbot.service.execution.OrderExecutorService;
+import com.bot.gift.x1000.martiangletradingbot.service.monitoring.MarketConditionAvoidanceService;
 import com.bot.gift.x1000.martiangletradingbot.service.notification.NotificationService;
 import com.bot.gift.x1000.martiangletradingbot.service.risk.RiskManagerService;
 import com.bot.gift.x1000.martiangletradingbot.service.scanner.MarketScannerService;
@@ -35,6 +36,7 @@ public class TradingEngineService {
     private final OrderExecutorService orderExecutorService;
     private final NotificationService notificationService;
     private final PositionRepository positionRepository;
+    private final MarketConditionAvoidanceService marketConditionAvoidanceService;
 
     @Value("${trading.account.balance:10000}")
     private BigDecimal accountBalance;
@@ -54,6 +56,15 @@ public class TradingEngineService {
 
         try {
             log.info("=== Starting Trading Cycle ===");
+
+            // Check market conditions for safety
+            MarketConditionAvoidanceService.ConditionCheck conditionCheck =
+                marketConditionAvoidanceService.isSafeToTrade();
+
+            if (!conditionCheck.isSafe()) {
+                log.warn("Trading paused due to market conditions: {}", conditionCheck.reason());
+                return;
+            }
 
             // Check if we can open new trades
             if (!riskManagerService.canOpenNewTrade(accountBalance)) {
@@ -112,6 +123,15 @@ public class TradingEngineService {
      */
     private void executeEntry(EntrySignal signal) {
         try {
+            // Double-check symbol-specific market conditions
+            MarketConditionAvoidanceService.ConditionCheck symbolCheck =
+                marketConditionAvoidanceService.isSymbolSafeToTrade(signal.getSymbol());
+
+            if (!symbolCheck.isSafe()) {
+                log.warn("Skipping entry for {} - {}", signal.getSymbol(), symbolCheck.reason());
+                return;
+            }
+
             // Calculate position size
             BigDecimal positionSize = riskManagerService.calculatePositionSize(
                 accountBalance,

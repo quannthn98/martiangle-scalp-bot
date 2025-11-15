@@ -1,0 +1,274 @@
+spring:
+  application:
+    name: Martiangle-Trading-Bot
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/trading_bot?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+        use_sql_comments: true
+    open-in-view: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+
+# Binance Exchange Configuration
+exchange:
+  binance:
+    api-key: ${BINANCE_API_KEY:your-api-key}
+    secret-key: ${BINANCE_SECRET_KEY:your-secret-key}
+    testnet: ${BINANCE_TESTNET:true}
+    base-url: ${BINANCE_BASE_URL:https://testnet.binancefuture.com}
+    ws-url: ${BINANCE_WS_URL:wss://stream.binancefuture.com}
+    request-timeout: 10000
+    max-retries: 4
+    retry-delay-ms: 2000
+
+# Trading Strategy Configuration
+strategy:
+  name: Wave Rider Scalping System
+  version: 1.0
+
+  # Timeframes for analysis
+  timeframes:
+    trend-primary: 4h
+    trend-secondary: 1h
+    execution: 1m
+
+  # Technical Indicators Configuration
+  indicators:
+    # EMA Settings
+    ema:
+      fast: 34
+      slow: 89
+      entry: 21
+
+    # RSI Settings
+    rsi:
+      period: 14
+      lower-bound: 50
+      upper-bound: 80
+      overbought: 75
+      extreme-overbought: 80
+      oversold: 25
+      extreme-oversold: 20
+
+    # ATR Settings
+    atr:
+      period: 14
+      spike-threshold: 1.5  # ATR spike detection multiplier
+
+    # ADX Settings
+    adx:
+      period: 14
+      h4-threshold: 25
+      h1-threshold: 20
+
+    # Volume Settings
+    volume:
+      ma-period: 20
+      min-ratio: 0.5  # Current volume must be > 50% of MA
+
+    # Bollinger Bands Settings
+    bollinger:
+      period: 20
+      std-dev: 2
+      squeeze-threshold: 0.02  # 2% bandwidth minimum
+
+  # Market Selection Criteria
+  market-selection:
+    # Tier 1 Pairs (Highest Priority)
+    tier1-pairs:
+      - BTCUSDT
+      - ETHUSDT
+      - BNBUSDT
+      - SOLUSDT
+      - XRPUSDT
+
+    # Tier 2 Pairs (Medium Priority)
+    tier2-pairs:
+      - ADAUSDT
+      - AVAXUSDT
+      - MATICUSDT
+      - DOTUSDT
+      - LINKUSDT
+
+    # Blacklist Criteria
+    blacklist:
+      min-24h-volume-usd: 100000000  # $100M
+      max-spread-percent: 0.1
+      max-funding-rate: 0.1
+      min-funding-rate: -0.1
+
+    # EMA Separation
+    min-ema-separation-percent: 1.5  # 1.5% minimum gap
+
+    # Price Position Check
+    max-distance-from-ema34-percent: 5.0  # Within 5% of EMA34
+
+  # Entry Rules Configuration
+  entry:
+    # DCA (Dollar Cost Averaging) Settings
+    dca:
+      max-entries: 3
+      min-spacing-percent: 0.3
+      max-spacing-percent: 0.5
+      rsi-threshold-level1: 45
+      rsi-threshold-level2: 40
+
+    # Entry Conditions
+    conditions:
+      long:
+        rsi-min: 50
+        rsi-max: 80
+        require-price-above-ema21: true
+        require-green-candle: true
+
+      short:
+        rsi-min: 20
+        rsi-max: 50
+        require-price-below-ema21: true
+        require-red-candle: true
+
+  # Exit Rules Configuration
+  exit:
+    # Take Profit Levels
+    take-profit:
+      tp1:
+        position-percent: 50
+        profit-target-percent: 0.8
+        time-based-minutes: 15
+        min-profit-percent: 0.5
+
+      tp2:
+        position-percent: 30
+        profit-target-percent: 1.5
+
+      tp3:
+        position-percent: 20
+        trailing-stop-percent: 0.3
+        max-hold-minutes: 30
+
+    # Stop Loss Configuration
+    stop-loss:
+      initial-percent: 1.5
+      swing-low-buffer-percent: 0.5
+      breakeven-after-tp1: true
+      tighten-after-10min-percent: 0.8
+
+    # Time-based Exit Rules
+    time-based:
+      force-close-no-breakeven-minutes: 20
+      partial-close-no-breakeven-minutes: 10
+      max-hold-minutes: 30
+
+    # Emergency Exit Conditions
+    emergency:
+      btc-dump-pump-percent: 2.0  # BTC moves >2% in 1 min
+      volume-spike-multiplier: 3.0
+      max-loss-percent: 2.0
+
+# Risk Management Configuration
+risk:
+  # Per-Trade Risk
+  risk-per-trade-percent: 1.5
+  risk-per-trade-min-percent: 1.0
+
+  # Daily Limits
+  max-daily-loss-percent: 3.0
+  max-daily-trades: 15
+
+  # Position Limits
+  max-concurrent-trades: 3
+  max-total-exposure-percent: 4.0
+
+  # Position Sizing
+  min-position-size-usdt: 500
+  max-position-size-usdt: 5000
+
+  # Leverage Settings
+  default-leverage: 5
+  max-leverage: 5
+
+# Monitoring Configuration
+monitoring:
+  # Position Monitoring
+  position-check-interval-seconds: 5
+
+  # Watchlist Scanning
+  watchlist-scan-interval-seconds: 30
+
+  # Trend Reconfirmation
+  trend-recheck-interval-minutes: 5
+
+  # Health Check
+  health-check-interval-minutes: 1
+
+# Notification Configuration
+notification:
+  enabled: true
+  channels:
+    - CONSOLE
+    # Uncomment and configure as needed
+    # - TELEGRAM
+    # - DISCORD
+    # - EMAIL
+
+  telegram:
+    bot-token: ${TELEGRAM_BOT_TOKEN:}
+    chat-id: ${TELEGRAM_CHAT_ID:}
+
+  discord:
+    webhook-url: ${DISCORD_WEBHOOK_URL:}
+
+  email:
+    host: ${EMAIL_HOST:smtp.gmail.com}
+    port: ${EMAIL_PORT:587}
+    username: ${EMAIL_USERNAME:}
+    password: ${EMAIL_PASSWORD:}
+    from: ${EMAIL_FROM:}
+    to: ${EMAIL_TO:}
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.bot.gift.x1000: DEBUG
+    org.springframework.web: INFO
+    org.hibernate: WARN
+    com.binance: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/trading-bot.log
+    max-size: 10MB
+    max-history: 30
+
+# Actuator Configuration (for monitoring)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
